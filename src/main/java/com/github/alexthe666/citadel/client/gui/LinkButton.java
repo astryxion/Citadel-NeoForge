@@ -9,6 +9,7 @@ import net.minecraft.client.resources.sounds.SimpleSoundInstance;
 import net.minecraft.client.sounds.SoundManager;
 import net.minecraft.network.chat.Component;
 import net.minecraft.sounds.SoundEvents;
+import net.minecraft.util.ARGB;
 import net.minecraft.util.FormattedCharSequence;
 import net.minecraft.util.Mth;
 import net.minecraft.world.item.ItemStack;
@@ -48,8 +49,10 @@ public class LinkButton extends Button {
         Minecraft minecraft = Minecraft.getInstance();
         Font font = minecraft.font;
         int i = this.getTextureY();
-        guiGraphics.blit(RenderPipelines.GUI_TEXTURED, book.getBookButtonsTexture(), this.getX(), this.getY(), 0.0F, (float) (46 + i * 20), this.width / 2, this.height, 256, 256);
-        guiGraphics.blit(RenderPipelines.GUI_TEXTURED, book.getBookButtonsTexture(), this.getX() + this.width / 2, this.getY(), (float) (200 - this.width / 2), (float) (46 + i * 20), this.width / 2, this.height, 256, 256);
+        int ty = 46 + i * 20;
+        var buttonsTex = book.getBookButtonsTexture();
+        guiGraphics.blit(RenderPipelines.GUI_TEXTURED, buttonsTex, this.getX(), this.getY(), 0.0F, (float) ty, this.width / 2, this.height, 256, 256, ARGB.color(255, 255, 255, 255));
+        guiGraphics.blit(RenderPipelines.GUI_TEXTURED, buttonsTex, this.getX() + this.width / 2, this.getY(), (float) (200 - this.width / 2), (float) ty, this.width / 2, this.height, 256, 256, ARGB.color(255, 255, 255, 255));
         if (this.isHovered) {
             int color = book.getWidgetColor();
             int r = (color & 0xFF0000) >> 16;

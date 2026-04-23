@@ -172,9 +172,20 @@ public abstract class GuiBasicBook extends Screen {
         qBody.rotateY((float) Math.toRadians(yRot));
         qBody.rotateZ((float) Math.toRadians(zRot));
 
-        Vector3f translate = new Vector3f(0.0F, state.boundingBoxHeight / 2.0F + scale, zOff);
-        int half = Math.max(32, (int) (40.0F * scale));
-        guiGraphics.entity(state, partialTick, translate, qBody, qPitch, posX - half, posY - half, posX + half, posY + half);
+        // PiP translation matches InventoryScreen / vanilla PiP: small Y lift for feet, not the portrait scale (~30).
+        Vector3f translate = new Vector3f(0.0F, state.boundingBoxHeight / 2.0F + 0.0625F, 0.0F);
+        // `scale` here is the PiP model scale (~30 * JSON scale), not pixel radius. Old `40 * scale` produced ~1200px half-bounds and broke/clipped book portraits.
+        int half = Math.max(40, Math.min(100, Math.round(scale * 2.15F)));
+        // JSON (x, y) matched 1.21.1 translate(posX, posY) at the entity origin. A symmetric PiP rect centered on y
+        // sat too low (over body text); a bottom-anchored rect sat too high (over title). Blend between those
+        // vertical centers: t=0 → same center as bottom-anchored portrait; t=1 → centered on posY (raise t to move down).
+        final float bookEntityPipVerticalBlend = 0.58F;
+        int centerY = posY - Math.round((1.0F - bookEntityPipVerticalBlend) * half);
+        int x0 = posX - half;
+        int x1 = posX + half;
+        int y0 = centerY - half;
+        int y1 = centerY + half;
+        guiGraphics.entity(state, scale, translate, qBody, qPitch, x0, y0, x1, y1);
 
         entity.setYRot(0);
         entity.setXRot(0);
@@ -188,7 +199,6 @@ public abstract class GuiBasicBook extends Screen {
     protected void init() {
         super.init();
         playBookOpeningSound();
-        addNextPreviousButtons();
         addLinkButtons();
     }
 
@@ -202,7 +212,6 @@ public abstract class GuiBasicBook extends Screen {
     private void addLinkButtons() {
         this.renderables.clear();
         this.clearWidgets();
-        addNextPreviousButtons();
         int k = (this.width - this.xSize) / 2;
         int l = (this.height - this.ySize + 128) / 2;
 
@@ -215,7 +224,6 @@ public abstract class GuiBasicBook extends Screen {
                     currentPageJSON = Identifier.parse(getTextFileDirectory() + linkData.getLinkedPage());
                     preservedPageIndex = this.currentPageCounter;
                     currentPageCounter = 0;
-                    addNextPreviousButtons();
                 }));
             }
             if (linkData.getPage() > this.maxPagesFromPrinting) {
@@ -231,13 +239,14 @@ public abstract class GuiBasicBook extends Screen {
                     currentPageJSON = Identifier.parse(getTextFileDirectory() + linkData.getLinkedPage());
                     preservedPageIndex = this.currentPageCounter;
                     currentPageCounter = 0;
-                    addNextPreviousButtons();
                 }));
             }
             if (linkData.getPage() > this.maxPagesFromPrinting) {
                 this.maxPagesFromPrinting = linkData.getPage();
             }
         }
+        // 26.1 deferred GUI: later widgets paint above earlier ones. Same registration order as 1.21.1 leaves arrows under the slot grid (same y-band).
+        addNextPreviousButtons();
     }
 
     private void onSwitchPage(boolean next) {
@@ -278,15 +287,34 @@ public abstract class GuiBasicBook extends Screen {
                 refreshSpacing();
             }
         }
+        // Deferred PiP (entities, Tabula) must be recorded *before* page text so the next stratum paints prose on top
+        // (1.21.1 achieved the same with depth via translate(..., zOff); 26.1 PiP composites by stratum order).
         if (internalPage != null) {
+            guiGraphics.nextStratum();
+            guiGraphics.pose().pushMatrix();
+            renderBookPipEmbeds(guiGraphics, partialTicks);
+            guiGraphics.pose().popMatrix();
+            guiGraphics.nextStratum();
             writePageText(guiGraphics, x, y);
         }
+        guiGraphics.nextStratum();
         super.extractRenderState(guiGraphics, x, y, partialTicks);
         prevPageJSON = currentPageJSON;
         if (internalPage != null) {
             guiGraphics.pose().pushMatrix();
-            renderOtherWidgets(guiGraphics, x, y, internalPage, partialTicks);
+            renderBookFlatEmbeds(guiGraphics, partialTicks);
             guiGraphics.pose().popMatrix();
+        }
+        // Page arrows were drawn in super with other widgets; flat embeds (images, recipes, items) run after text.
+        // Blit arrows again on a new stratum so citadel:textures/gui/book/widgets.png regions stay visible (same UVs as 1.21.1).
+        if (this.deferPageArrowsToPostPass() && this.buttonPreviousPage != null && this.buttonNextPage != null) {
+            guiGraphics.nextStratum();
+            if (this.buttonPreviousPage.visible) {
+                this.buttonPreviousPage.blitPageArrowPostPass(guiGraphics, x, y);
+            }
+            if (this.buttonNextPage.visible) {
+                this.buttonNextPage.blitPageArrowPostPass(guiGraphics, x, y);
+            }
         }
         if (this.entityTooltip != null) {
             guiGraphics.setTooltipForNextFrame(font, Minecraft.getInstance().font.split(Component.translatable(entityTooltip), Math.max(this.width / 2 - 43, 170)), x, y);
@@ -312,7 +340,9 @@ public abstract class GuiBasicBook extends Screen {
             readInPageWidgets(internalPage);
             addWidgetSpacing();
             addLinkButtons();
+            int maxPagesFromEntityWidgets = this.maxPagesFromPrinting;
             readInPageText(currentPageText);
+            this.maxPagesFromPrinting = Math.max(this.maxPagesFromPrinting, maxPagesFromEntityWidgets);
         }
     }
 
@@ -322,9 +352,17 @@ public abstract class GuiBasicBook extends Screen {
 
     @Nullable
     private Recipe<?> getRecipeByName(String registryName) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == null) {
+            return null;
+        }
         try {
             ResourceKey<Recipe<?>> key = ResourceKey.create(Registries.RECIPE, Identifier.parse(registryName));
-            return Minecraft.getInstance().level.registryAccess().lookupOrThrow(Registries.RECIPE).get(key).map(Holder.Reference::value).orElse(null);
+            return mc.level.registryAccess()
+                .lookup(Registries.RECIPE)
+                .flatMap(reg -> reg.get(key))
+                .map(Holder.Reference::value)
+                .orElse(null);
         } catch (Exception e) {
             e.printStackTrace();
         }
@@ -354,41 +392,10 @@ public abstract class GuiBasicBook extends Screen {
         }
     }
 
-    private void renderOtherWidgets(GuiGraphicsExtractor guiGraphics, int x, int y, BookPage page, float partialTicks) {
-        int color = getBindingColor();
-        int r = (color & 0xFF0000) >> 16;
-        int g = (color & 0xFF00) >> 8;
-        int b = (color & 0xFF);
-
+    /** Tabula + JSON entity portraits (PiP). Recorded in an earlier stratum than {@link #writePageText} so prose draws on top. */
+    private void renderBookPipEmbeds(GuiGraphicsExtractor guiGraphics, float partialTicks) {
         int k = (this.width - this.xSize) / 2;
         int l = (this.height - this.ySize + 128) / 2;
-
-        for (ImageData imageData : images) {
-            if (imageData.getPage() == this.currentPageCounter) {
-                Identifier tex = textureMap.get(imageData.getTexture());
-                if (tex == null) {
-                    tex = Identifier.parse(imageData.getTexture());
-                    textureMap.put(imageData.getTexture(), tex);
-                }
-                // yIndexesToSkip.put(imageData.getPage(), new Whitespace(imageData.getX(), imageData.getY(),(int) (imageData.getScale() * imageData.getWidth()), (int) (imageData.getScale() * imageData.getHeight() * 0.8F)));
-                float scale = (float) imageData.getScale();
-                guiGraphics.pose().pushMatrix();
-                guiGraphics.pose().translate(k + imageData.getX(), l + imageData.getY());
-                guiGraphics.pose().scale(scale, scale);
-                guiGraphics.blit(RenderPipelines.GUI_TEXTURED, tex, 0, 0, (float) imageData.getU(), (float) imageData.getV(), imageData.getWidth(), imageData.getHeight(), 256, 256);
-                guiGraphics.pose().popMatrix();
-            }
-        }
-        for (RecipeData recipeData : recipes) {
-            if (recipeData.getPage() == this.currentPageCounter) {
-                guiGraphics.pose().pushMatrix();
-                guiGraphics.pose().translate(k + recipeData.getX(), l + recipeData.getY());
-                float scale = (float) recipeData.getScale();
-                guiGraphics.pose().scale(scale, scale);
-                guiGraphics.blit(RenderPipelines.GUI_TEXTURED, getBookWidgetTexture(), 0, 0, 0.0F, 88.0F, 116, 53, 256, 256);
-                guiGraphics.pose().popMatrix();
-            }
-        }
 
         for (TabulaRenderData tabulaRenderData : tabulaRenders) {
             if (tabulaRenderData.getPage() == this.currentPageCounter) {
@@ -436,6 +443,38 @@ public abstract class GuiBasicBook extends Screen {
                     }
                     drawEntityOnScreen(guiGraphics, k + data.getX(), l + data.getY(), 1050F, 30 * scale, data.isFollow_cursor(), data.getRot_x(), data.getRot_y(), data.getRot_z(), mouseX, mouseY, model, partialTicks);
                 }
+            }
+        }
+    }
+
+    /** Images, recipe chrome, recipe contents, item icons — after page text so they stay on top of prose where intended. */
+    private void renderBookFlatEmbeds(GuiGraphicsExtractor guiGraphics, float partialTicks) {
+        int k = (this.width - this.xSize) / 2;
+        int l = (this.height - this.ySize + 128) / 2;
+
+        for (ImageData imageData : images) {
+            if (imageData.getPage() == this.currentPageCounter) {
+                Identifier tex = textureMap.get(imageData.getTexture());
+                if (tex == null) {
+                    tex = Identifier.parse(imageData.getTexture());
+                    textureMap.put(imageData.getTexture(), tex);
+                }
+                float scale = (float) imageData.getScale();
+                guiGraphics.pose().pushMatrix();
+                guiGraphics.pose().translate(k + imageData.getX(), l + imageData.getY());
+                guiGraphics.pose().scale(scale, scale);
+                guiGraphics.blit(RenderPipelines.GUI_TEXTURED, tex, 0, 0, (float) imageData.getU(), (float) imageData.getV(), imageData.getWidth(), imageData.getHeight(), 256, 256);
+                guiGraphics.pose().popMatrix();
+            }
+        }
+        for (RecipeData recipeData : recipes) {
+            if (recipeData.getPage() == this.currentPageCounter) {
+                guiGraphics.pose().pushMatrix();
+                guiGraphics.pose().translate(k + recipeData.getX(), l + recipeData.getY());
+                float scale = (float) recipeData.getScale();
+                guiGraphics.pose().scale(scale, scale);
+                guiGraphics.blit(RenderPipelines.GUI_TEXTURED, getBookWidgetTexture(), 0, 0, 0.0F, 88.0F, 116, 53, 256, 256);
+                guiGraphics.pose().popMatrix();
             }
         }
         for (RecipeData recipeData : recipes) {
@@ -566,12 +605,21 @@ public abstract class GuiBasicBook extends Screen {
         return getBindingColor();
     }
 
+    /**
+     * When true, {@link BookPageButton} skips drawing in the widget pass and draws after {@link #renderBookFlatEmbeds}
+     * so deferred GUI does not leave arrows under JSON-driven blits (26.1). Same atlas/UVs as 1.21.1.
+     */
+    protected boolean deferPageArrowsToPostPass() {
+        return true;
+    }
+
     protected int getTextColor() {
-        return 0X303030;
+        // GuiGraphicsExtractor.text() skips when ARGB.alpha(color) == 0; 0x303030 alone has alpha 0.
+        return 0xFF303030;
     }
 
     protected int getTitleColor() {
-        return 0XBAAC98;
+        return 0xFFBAAC98;
     }
 
     public abstract Identifier getRootPage();

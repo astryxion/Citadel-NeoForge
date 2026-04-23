@@ -22,9 +22,9 @@ public final class BookBlit {
     }
 
     /**
-     * Book page / widget arrow at atlas (100 + uOffset, vOffset), size 18×12 — same layout as {@link BookPageButton#drawNextArrow}.
+     * Book page arrows in {@code widgets.png}: region top-left (uOffset, vOffset), 18×12 — 26.1 atlas uses u=0 base (1.21.1 used u=100).
      */
     public static void blitBookArrow(GuiGraphicsExtractor guiGraphics, Identifier texture, int destX, int destY, int uOffset, int vOffset, int r, int g, int b, int a) {
-        guiGraphics.blit(RenderPipelines.GUI_TEXTURED, texture, destX, destY, 100.0F + uOffset, (float) vOffset, 18, 12, 256, 256, ARGB.color(a, r, g, b));
+        blitWithColor(guiGraphics, texture, destX, destY, uOffset, vOffset, 18, 12, 256, 256, r, g, b, a);
     }
 }
