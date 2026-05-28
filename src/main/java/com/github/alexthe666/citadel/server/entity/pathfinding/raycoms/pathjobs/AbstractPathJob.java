@@ -432,7 +432,7 @@ public abstract class AbstractPathJob implements Callable<Path> {
 
     public static Direction getXZFacing(final BlockPos pos, final BlockPos neighbor) {
         final BlockPos vector = neighbor.subtract(pos);
-        return Direction.getNearest(vector.getX(), 0, vector.getZ(), null);
+        return Direction.getNearest(vector.getX(), 0, vector.getZ(), Direction.NORTH);
     }
 
     /**
@@ -1360,8 +1360,12 @@ public abstract class AbstractPathJob implements Callable<Path> {
 
     protected boolean isPassableBB(final BlockPos parentPos, final BlockPos pos, MNode parent) {
         Direction facingDir = getXZFacing(parentPos, pos);
-        if (facingDir == Direction.DOWN || facingDir == Direction.UP)
+        if (facingDir == null) {
+            return true;
+        }
+        if (facingDir == Direction.DOWN || facingDir == Direction.UP) {
             return false;
+        }
         facingDir = facingDir.getClockWise();
         for (int i = entitySizeXZStart; i <= entitySizeXZEnd; i++) {
             for (int j = 0; j < entitySizeY; j++) {
@@ -1378,8 +1382,12 @@ public abstract class AbstractPathJob implements Callable<Path> {
      */
     protected boolean isPassableBBDown(final BlockPos parentPos, final BlockPos pos, MNode parent) {
         Direction facingDir = getXZFacing(parentPos, pos);
-        if (facingDir == Direction.DOWN || facingDir == Direction.UP)
+        if (facingDir == null) {
+            return true;
+        }
+        if (facingDir == Direction.DOWN || facingDir == Direction.UP) {
             return false;
+        }
         facingDir = facingDir.getClockWise();
         for (int i = entitySizeXZStart; i <= entitySizeXZEnd; i++) {
             for (int j = 0; j < entitySizeY; j++) {
