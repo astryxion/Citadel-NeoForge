@@ -20,16 +20,29 @@ base {
 
 java.toolchain.languageVersion = JavaLanguageVersion.of(25)
 
-// Citadel sources live under projectDir/main/... (not src/main/...).
-sourceSets.main.java.srcDir('main/java')
-sourceSets.main.resources.srcDir('main/resources')
-
 neoForge {
     version = neoVer
-    accessTransformers = project.files('main/resources/META-INF/accesstransformer.cfg')
+    accessTransformers = project.files('src/main/resources/META-INF/accesstransformer.cfg')
 
-    // No `runs { client { } }` here: a client run on :citadel made Gradle wire `:citadel:runClient` as a dependency of
-    // the root `runClient`, which launched two game instances. Use the root project's `runClient` only (Alex's Mobs + citadel mod).
+    runs {
+        client {
+            client()
+        }
+
+        server {
+            server()
+            programArgument '--nogui'
+        }
+
+        data {
+            data()
+            programArguments.addAll '--mod', 'citadel', '--all', '--output', file('src/generated/resources/').getAbsolutePath(), '--existing', file('src/main/resources/').getAbsolutePath()
+        }
+
+        configureEach {
+            logLevel = org.slf4j.event.Level.INFO
+        }
+    }
 
     mods {
         citadel {
@@ -58,7 +71,7 @@ def generateCitadelModMetadata = tasks.register('generateCitadelModMetadata', Pr
     ]
     inputs.properties replaceProperties
     expand replaceProperties
-    from 'main/templates'
+    from 'src/main/templates'
     into layout.buildDirectory.dir('generated/sources/citadelModMetadata')
 }
 
@@ -69,10 +82,28 @@ repositories {
     mavenCentral()
 }
 
+configurations {
+    shade
+    implementation.extendsFrom(shade)
+}
+
 dependencies {
     // Citadel Video.java (client) — same libraries as published Citadel; required for :citadel:compileJava.
-    implementation 'org.jcodec:jcodec:0.2.5'
-    implementation 'de.sfuhrm:jaad:0.8.7'
+    shade 'org.jcodec:jcodec:0.2.5'
+    shade 'de.sfuhrm:jaad:0.8.7'
+}
+
+// Match the official Citadel build: bundle the video-decoding libs into the jar so the
+// standalone artifact works outside a dev environment.
+jar {
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    afterEvaluate {
+        configurations.shade.each { dep ->
+            from(project.zipTree(dep)) {
+                exclude 'META-INF', 'META-INF/**'
+            }
+        }
+    }
 }
 
 tasks.withType(JavaCompile).configureEach { compileTask ->
