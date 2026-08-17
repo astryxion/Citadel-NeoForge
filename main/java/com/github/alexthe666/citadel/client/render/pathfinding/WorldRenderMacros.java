@@ -4,7 +4,8 @@ import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.*;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
-import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.client.gui.font.TextRenderable;
+import net.minecraft.client.renderer.StagedVertexBuffer;
 import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.client.renderer.rendertype.RenderSetup;
 import net.minecraft.client.renderer.rendertype.RenderType;
@@ -14,8 +15,10 @@ import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Matrix4f;
+import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 
 public class WorldRenderMacros {
     private static final int MAX_DEBUG_TEXT_RENDER_DIST_SQUARED = 8 * 8 * 16;
@@ -32,20 +35,35 @@ public class WorldRenderMacros {
      */
     private static BufferSource bufferSource;
 
-    public static class BufferSource implements MultiBufferSource {
-        private final MultiBufferSource.BufferSource inner;
+    public static class BufferSource {
+        private final StagedVertexBuffer stagedVertexBuffer;
+        private final Map<RenderType, StagedVertexBuffer.Draw> draws = new HashMap<>();
 
-        public BufferSource(MultiBufferSource.BufferSource inner) {
-            this.inner = inner;
+        public BufferSource(StagedVertexBuffer stagedVertexBuffer) {
+            this.stagedVertexBuffer = stagedVertexBuffer;
         }
 
-        @Override
         public VertexConsumer getBuffer(RenderType renderType) {
-            return inner.getBuffer(renderType);
+            StagedVertexBuffer.Draw draw = draws.computeIfAbsent(renderType, rt -> {
+                VertexSorting sorting = rt.sortOnUpload() ? VertexSorting.byDistance(0.0F, 0.0F, 0.0F) : null;
+                return stagedVertexBuffer.appendDraw(rt.format(), rt.primitiveTopology(), sorting);
+            });
+            return stagedVertexBuffer.getVertexBuilder(draw);
         }
 
         public void endBatch() {
-            inner.endBatch();
+            if (draws.isEmpty()) {
+                return;
+            }
+            stagedVertexBuffer.upload();
+            for (Map.Entry<RenderType, StagedVertexBuffer.Draw> entry : draws.entrySet()) {
+                StagedVertexBuffer.ExecuteInfo info = stagedVertexBuffer.getExecuteInfo(entry.getValue());
+                if (info != null) {
+                    entry.getKey().prepare().drawFromBuffer(info);
+                }
+            }
+            stagedVertexBuffer.endDraw();
+            draws.clear();
         }
     }
 
@@ -107,13 +125,20 @@ public class WorldRenderMacros {
 
     public static BufferSource getBufferSource() {
         if (bufferSource == null) {
-            bufferSource = new BufferSource(Minecraft.getInstance().renderBuffers().bufferSource());
+            bufferSource = new BufferSource(Minecraft.getInstance().gameRenderer.renderBuffers().stagedVertexBuffer());
         }
         return bufferSource;
     }
 
     static void drawInBatch(Font font, net.minecraft.util.FormattedCharSequence text, float x, float y, int color, boolean dropShadow, Matrix4f pose, BufferSource buffer, Font.DisplayMode displayMode, int backgroundColor, int lightCoords) {
-        font.drawInBatch(text, x, y, color, dropShadow, pose, buffer, displayMode, backgroundColor, lightCoords);
+        Font.PreparedText preparedText = font.prepareText(text, x, y, color, dropShadow, false, backgroundColor);
+        preparedText.visit(new Font.GlyphVisitor() {
+            @Override
+            public void acceptRenderable(TextRenderable renderable) {
+                VertexConsumer vertexConsumer = buffer.getBuffer(renderable.renderType(displayMode));
+                renderable.render(pose, vertexConsumer, lightCoords, false);
+            }
+        });
     }
 
     /**
@@ -916,13 +941,13 @@ public class WorldRenderMacros {
         }
 
         final int cap = text.size();
-        Vec3 cam = Minecraft.getInstance().gameRenderer.getMainCamera().position();
+        Vec3 cam = Minecraft.getInstance().gameRenderer.mainCamera().position();
         if (cap > 0 && cam.distanceToSqr(pos.getX(), pos.getY(), pos.getZ()) <= MAX_DEBUG_TEXT_RENDER_DIST_SQUARED) {
             final Font fontrenderer = Minecraft.getInstance().font;
 
             matrixStack.pushPose();
             matrixStack.translate(pos.getX() + 0.5d, pos.getY() + 0.75d, pos.getZ() + 0.5d);
-            matrixStack.mulPose(Minecraft.getInstance().gameRenderer.getMainCamera().rotation());
+            matrixStack.mulPose(Minecraft.getInstance().gameRenderer.mainCamera().rotation());
             matrixStack.scale(-0.014f, -0.014f, 0.014f);
             matrixStack.translate(0.0d, 18.0d, 0.0d);
 

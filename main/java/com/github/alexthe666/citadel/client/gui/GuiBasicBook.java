@@ -74,7 +74,7 @@ public abstract class GuiBasicBook extends Screen {
     private final Map<String, TabulaModel> renderedTabulaModels = new HashMap<>();
     private final Map<String, Entity> renderedEntites = new HashMap<>();
     private final Map<String, Identifier> textureMap = new HashMap<>();
-    /** Client-only book preview entities are never added to the level; this version requires {@link Entity#setId(int)} before render. */
+    /** Client-only book preview entities are never added to the level; 26.2 requires {@link Entity#setId(int)} before render. */
     private static int nextBookPreviewEntityId = -1;
 
     static Entity createBookPreviewEntity(EntityType<?> type) {
