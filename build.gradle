@@ -11,7 +11,7 @@ def rootGradleProps = new Properties()
 file("${rootDir}/gradle.properties").withInputStream { rootGradleProps.load(it) }
 def neoVer = rootGradleProps.getProperty('neo_version')
 
-version = findProperty('citadel_version') ?: '26.1-1.0.1'
+version = findProperty('citadel_version') ?: '26.1-1.1.0'
 group = 'com.github.alexthe666'
 
 base {
@@ -39,9 +39,9 @@ neoForge {
 }
 
 def generateCitadelModMetadata = tasks.register('generateCitadelModMetadata', ProcessResources) {
-    // NeoForge uses semver-like versioning; declare "26.1.0+" compatibility for the mod dependency range.
+    // NeoForge uses semver-like versioning; declare 26.1+ compatibility for the mod dependency range.
     def _mc = rootGradleProps.getProperty('minecraft_version') // e.g. "26.1"
-    def _neoforgeRange = "[${_mc}.0,)" // e.g. "[26.1.0,)"
+    def _neoforgeRange = "[${_mc},)" // e.g. "[26.1,)"
     var replaceProperties = [
             minecraft_version           : rootGradleProps.getProperty('minecraft_version'),
             minecraft_version_range     : rootGradleProps.getProperty('minecraft_version_range'),
@@ -49,12 +49,14 @@ def generateCitadelModMetadata = tasks.register('generateCitadelModMetadata', Pr
             neoforge_loader_version_range : findProperty('citadel_neoforge_loader_version_range') ?: '[4,)',
             neoforge_version_range        : findProperty('citadel_neoforge_version_range') ?: _neoforgeRange,
             mod_id                        : 'citadel',
-            mod_name                      : findProperty('citadel_display_name') ?: 'Citadel',
-            license                       : findProperty('citadel_license') ?: 'MIT',
-            version                       : findProperty('citadel_version') ?: '26.1-1.0.1',
-            mod_author                    : findProperty('citadel_author') ?: 'Alexthe666',
+            mod_name                      : findProperty('citadel_display_name') ?: 'Citadel (NeoForge)',
+            license                       : findProperty('citadel_license') ?: 'LGPL-3.0',
+            version                       : findProperty('citadel_version') ?: '26.1-1.1.0',
+            mod_author                    : findProperty('citadel_author') ?: 'Astryxion',
             mod_description               : findProperty('citadel_description') ?: 'Citadel library',
-            credits                       : findProperty('citadel_credits') ?: '',
+            credits                       : findProperty('citadel_credits') ?: 'Alexthe666',
+            display_url                   : findProperty('citadel_display_url') ?: 'https://github.com/astryxion/Citadel-NeoForge',
+            issue_tracker_url             : findProperty('citadel_issue_tracker_url') ?: 'https://github.com/astryxion/Citadel-NeoForge/issues',
     ]
     inputs.properties replaceProperties
     expand replaceProperties
