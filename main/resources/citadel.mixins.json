@@ -1,7 +1,7 @@
 {
   "required": true,
   "minVersion": "0.8",
-  "package": "com.github.alexthe666.citadel.mixin",
+  "package": "com.github.alexthe668.citadel.mixin",
   "compatibilityLevel": "JAVA_21",
   "refmap": "citadel.refmap.json",
   "mixins": [
