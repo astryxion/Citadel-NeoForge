@@ -1,5 +1,5 @@
 Citadel is a library mod intended to provide a home
-to the codebase maintained by Astryxion, with credits to Alexthe666, Gegy1000, and other mod authors.
+to the codebase maintained by Astryxion, with credits to Alexthe668, Gegy1000, and other mod authors.
 It is mainly composed of shared code for animation, rendering and entity property tracking.
 It also contains a basic guidebook system, of which you are looking at right now.
 The book system reads in automatically from JSON files.
